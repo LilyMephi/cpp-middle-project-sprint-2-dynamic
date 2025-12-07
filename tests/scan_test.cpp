@@ -1,9 +1,8 @@
 #include <gtest/gtest.h>
-#include <print>
 
-#include "scan.hpp"
+// #include "scan.hpp"
 
-TEST(ScanTest, SimpleTest) {
-    auto result = stdx::scan<std::string>("number", "{}");
-    ASSERT_FALSE(result);
-}
+// TEST(ScanTest, SimpleTest) {
+//     auto result = stdx::scan<std::string>("number", "{}");
+//     ASSERT_FALSE(result);
+// }

@@ -1,21 +1,97 @@
 #pragma once
 
+#include <charconv>
 #include <expected>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "format_string.hpp"
 #include "types.hpp"
 
 namespace stdx::details {
 
-// здесь ваш код
+template <typename T>
+std::expected<void, details::scan_error> parse_value(std::string_view input, std::string_view fmt, T &value);
+
+template <typename T>
+requires std::is_integral_v<T>  // C++20
+    std::expected<void, details::scan_error> parse_value(std::string_view input, std::string_view fmt, T &value) {
+    if (fmt.size() != 2 || fmt[0] != '%') {
+        return std::unexpected(details::scan_error{"Invalid format"});
+    }
+
+    if constexpr (std::is_unsigned_v<T>) {
+        if (fmt[1] != 'u')
+            return std::unexpected(details::scan_error{"Expected %u format and non-empty input"});
+    } else {
+        if (fmt[1] != 'd')
+            return std::unexpected(details::scan_error{"Expected %d format and non-empty input"});
+    }
+
+    auto res = std::from_chars(input.data(), input.data() + input.size(), value);
+    if (res.ec != std::errc{} || res.ptr != input.data() + input.size())
+        return std::unexpected(details::scan_error{"Integer parse failed or incomplete"});
+
+    return {};
+}
+
+template <>
+std::expected<void, details::scan_error> parse_value<float>(std::string_view input, std::string_view fmt,
+                                                            float &value) {
+    if (fmt[1] != 'f')
+        return std::unexpected(details::scan_error{"Expected %f"});
+    auto res = std::from_chars(input.data(), input.data() + input.size(), value);
+    if (res.ec != std::errc{})
+        return std::unexpected(details::scan_error{"Parse failed"});
+    return {};
+}
+
+template <>
+std::expected<void, details::scan_error> parse_value<double>(std::string_view input, std::string_view fmt,
+                                                             double &value) {
+    if (fmt[1] != 'f')
+        return std::unexpected(details::scan_error{"Expected %f"});
+    auto res = std::from_chars(input.data(), input.data() + input.size(), value);
+    if (res.ec != std::errc{})
+        return std::unexpected(details::scan_error{"Parse failed"});
+    return {};
+}
+
+template <>
+std::expected<void, details::scan_error> parse_value<std::string_view>(std::string_view input, std::string_view fmt,
+                                                                       std::string_view &value) {
+    if (fmt[1] != 's')
+        return std::unexpected(details::scan_error{"Expected %s"});
+    value = input;
+    return {};
+}
+
+template <>
+std::expected<void, details::scan_error> parse_value<std::string>(std::string_view input, std::string_view fmt,
+                                                                  std::string &value) {
+    if (fmt[1] != 's')
+        return std::unexpected(details::scan_error{"Expected %s"});
+    value = std::string(input);
+    return {};
+}
 
 // Функция для парсинга значения с учетом спецификатора формата
 template <typename T>
 std::expected<T, scan_error> parse_value_with_format(std::string_view input, std::string_view fmt) {
-    // здесь ваш код
+    if (fmt.empty() || fmt.front() != '%' || fmt.size() < 2) {
+        return std::unexpected(details::scan_error{"Wrong type"});
+    }
+
+    T value;
+    auto result = parse_value(input, fmt, value);
+    if (!result) {
+        return std::unexpected(result);
+    }
+
+    return value;
 }
 
 // Функция для проверки корректности входных данных и выделения из обеих строк интересующих данных для парсинга
@@ -70,4 +146,19 @@ parse_sources(std::string_view input, std::string_view format) {
     return std::pair{format_parts, input_parts};
 }
 
-} // namespace stdx::details
+templat<typename First, typename... Tail> auto
+parse_input(std::vector<std::pair<size_t, std::string_view>> input_format)
+    -> std::tuple<decltype(first_out), decltype(rest_out)...> {
+    if (input_pairs.empty())
+        return std::unexpected(details::scan_error{"No placeholders found"});
+
+    auto pair = input_pairs.front();
+
+    auto first_out = parse_single<First>(first_pair.first);  // парсим значение
+
+    if constexpr (sizeof...(Rest) > 0) {
+        return std::tuple_cat(std::make_tuple(first_out), parse_input(input_pairs, rest_out...));
+    }
+    return std::make_tuple(first_out);
+}
+}  // namespace stdx::details
