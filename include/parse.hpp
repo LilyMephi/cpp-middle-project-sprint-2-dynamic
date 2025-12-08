@@ -4,21 +4,26 @@
 #include <expected>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "format_string.hpp"
 #include "types.hpp"
-
+#include <iostream>
 namespace stdx::details {
 
 template <typename T>
-std::expected<void, details::scan_error> parse_value(std::string_view input, std::string_view fmt, T &value);
+std::expected<void, details::scan_error> parse_value(std::string_view input, std::string_view fmt, T &value) {
+    static_assert(sizeof(T) == 0, "parse_value is not implemented for this type T");
+    return std::unexpected(details::scan_error{"parse_value not implemented for this type"});
+}
 
 template <typename T>
 requires std::is_integral_v<T>  // C++20
     std::expected<void, details::scan_error> parse_value(std::string_view input, std::string_view fmt, T &value) {
+    std::cout << fmt; 
     if (fmt.size() != 2 || fmt[0] != '%') {
         return std::unexpected(details::scan_error{"Invalid format"});
     }
@@ -42,10 +47,10 @@ template <>
 std::expected<void, details::scan_error> parse_value<float>(std::string_view input, std::string_view fmt,
                                                             float &value) {
     if (fmt[1] != 'f')
-        return std::unexpected(details::scan_error{"Expected %f"});
+        return std::unexpected(details::scan_error{"Expected %f for float"});
     auto res = std::from_chars(input.data(), input.data() + input.size(), value);
     if (res.ec != std::errc{})
-        return std::unexpected(details::scan_error{"Parse failed"});
+        return std::unexpected(details::scan_error{"Float parse failed or input not fully consumed"});
     return {};
 }
 
@@ -53,10 +58,10 @@ template <>
 std::expected<void, details::scan_error> parse_value<double>(std::string_view input, std::string_view fmt,
                                                              double &value) {
     if (fmt[1] != 'f')
-        return std::unexpected(details::scan_error{"Expected %f"});
+        return std::unexpected(details::scan_error{"Expected %f for double"});
     auto res = std::from_chars(input.data(), input.data() + input.size(), value);
     if (res.ec != std::errc{})
-        return std::unexpected(details::scan_error{"Parse failed"});
+        return std::unexpected(details::scan_error{"Double parse failed or input not fully consumed"});
     return {};
 }
 
@@ -64,7 +69,7 @@ template <>
 std::expected<void, details::scan_error> parse_value<std::string_view>(std::string_view input, std::string_view fmt,
                                                                        std::string_view &value) {
     if (fmt[1] != 's')
-        return std::unexpected(details::scan_error{"Expected %s"});
+        return std::unexpected(details::scan_error{"Expected %s format for string_view"});
     value = input;
     return {};
 }
@@ -73,7 +78,7 @@ template <>
 std::expected<void, details::scan_error> parse_value<std::string>(std::string_view input, std::string_view fmt,
                                                                   std::string &value) {
     if (fmt[1] != 's')
-        return std::unexpected(details::scan_error{"Expected %s"});
+        return std::unexpected(details::scan_error{"Expected %s format for string"});
     value = std::string(input);
     return {};
 }
@@ -81,14 +86,14 @@ std::expected<void, details::scan_error> parse_value<std::string>(std::string_vi
 // Функция для парсинга значения с учетом спецификатора формата
 template <typename T>
 std::expected<T, scan_error> parse_value_with_format(std::string_view input, std::string_view fmt) {
-    if (fmt.empty() || fmt.front() != '%' || fmt.size() < 2) {
-        return std::unexpected(details::scan_error{"Wrong type"});
+    if (fmt.empty() || fmt.size() < 4) {
+        return std::unexpected(details::scan_error{"Wrong format specifier"});
     }
-
+    std::string_view inner = fmt.substr(1, fmt.size() - 2);
     T value;
-    auto result = parse_value(input, fmt, value);
+    auto result = parse_value(input, inner, value);
     if (!result) {
-        return std::unexpected(result);
+        return std::unexpected(result.error());
     }
 
     return value;
@@ -146,19 +151,32 @@ parse_sources(std::string_view input, std::string_view format) {
     return std::pair{format_parts, input_parts};
 }
 
-templat<typename First, typename... Tail> auto
-parse_input(std::vector<std::pair<size_t, std::string_view>> input_format)
-    -> std::tuple<decltype(first_out), decltype(rest_out)...> {
-    if (input_pairs.empty())
-        return std::unexpected(details::scan_error{"No placeholders found"});
+template <typename T, typename... Ts>
+std::expected<std::tuple<T, Ts...>, scan_error> parse_input(format_string<> input, details::fixed_string<> values,
+                                                            size_t index = 0) {
+    // static_assert(index < sizeof...(Ts) + 1, "Index out of range in parse_input");
 
-    auto pair = input_pairs.front();
+    const auto placeholder = input.placeholder_positions[index].second;
+    const auto fmt = values[index];
 
-    auto first_out = parse_single<First>(first_pair.first);  // парсим значение
+    auto res = parse_value_with_format<T>(fmt, placeholder);
 
-    if constexpr (sizeof...(Rest) > 0) {
-        return std::tuple_cat(std::make_tuple(first_out), parse_input(input_pairs, rest_out...));
+    if (!res) {
+        return std::unexpected(res.error());
+    } else {
     }
-    return std::make_tuple(first_out);
+
+    T value = *res;
+
+    if constexpr (sizeof...(Ts) == 0) {
+        return std::make_tuple(value);
+    } else {
+        auto tail = parse_input<Ts...>(input, values, index + 1);
+        if (!tail) {
+            return std::unexpected(tail.error());
+        }
+        return std::tuple_cat(std::make_tuple(value), *tail);
+    }
 }
+
 }  // namespace stdx::details
