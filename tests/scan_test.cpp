@@ -29,7 +29,6 @@ TEST(ParseInputTest, MultipleValuesSuccess) {
     auto result = stdx::scan<int, double>("{%d} {%f}"_fs, "42 3.14");
     ASSERT_TRUE(result.has_value());
     auto [i, d] = *result;
-    std::cout << i << " " << d;
     EXPECT_EQ(i, 42);
     EXPECT_DOUBLE_EQ(d, 3.14);
 }
