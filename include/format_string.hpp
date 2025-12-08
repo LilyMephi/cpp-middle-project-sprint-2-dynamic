@@ -62,7 +62,7 @@ public:
             size_t pos = 0;
             while ((pos = str.find(placeholder, pos)) != std::string_view::npos) {
                 results.emplace_back(pos, placeholder);
-                ++pos;  // Смещаемся дальше, чтобы не зациклиться в случае пустого плейсхолдера
+                ++pos;
             }
         }
 
