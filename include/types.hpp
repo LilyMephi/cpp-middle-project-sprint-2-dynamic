@@ -45,13 +45,11 @@ public:
         for (size_t i = 0; i < N; ++i) {
             if (data_[i] != ' ' && data_[i] != '\0') {
                 if (!in_word) {
-                    // Начало нового слова
                     in_word = true;
                     start = i;
                 }
             } else {
                 if (in_word) {
-                    // Конец слова
                     end = i;
                     if (word_count == idx) {
                         return std::string_view(data_.data() + start, end - start);
@@ -64,7 +62,6 @@ public:
                 }
             }
         }
-        // Если последнее слово заканчивается концом строки без пробела
         if (in_word) {
             end = N;
             if (word_count == idx) {
