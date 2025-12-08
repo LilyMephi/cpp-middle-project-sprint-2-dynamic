@@ -21,7 +21,7 @@ std::expected<void, details::scan_error> parse_value(std::string_view input, std
 }
 
 template <typename T>
-requires std::is_integral_v<T>  // C++20
+requires std::is_integral_v<T>
     std::expected<void, details::scan_error> parse_value(std::string_view input, std::string_view fmt, T &value) {
     std::cout << fmt; 
     if (fmt.size() != 2 || fmt[0] != '%') {
