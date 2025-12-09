@@ -1,21 +1,107 @@
 #pragma once
 
+#include <charconv>
 #include <expected>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "format_string.hpp"
 #include "types.hpp"
-
+#include <iostream>
 namespace stdx::details {
+template <typename T>
+concept Parsable = requires(T t) {
+    parse_value(std::string_view{}, std::string_view{}, t);
+}
+|| std::is_integral_v<T> || std::is_floating_point_v<T>;
+|| std::same_as<T, std::string> || std::same_as<T, std::string_view>;
 
-// здесь ваш код
+template <Parsable T>
+std::expected<T, details::scan_error> parse_value(std::string_view input, std::string_view fmt, T &value) {
+    static_assert(sizeof(T) == 0, "parse_value is not implemented for this type T");
+    return std::unexpected(details::scan_error{"parse_value not implemented for this type"});
+}
+
+template <Parsable T>
+requires std::is_integral_v<T> std::expected<T, details::scan_error> parse_value(std::string_view input,
+                                                                                 std::string_view fmt, T &value) {
+    if (fmt.size() != 2 || fmt[0] != '%') {
+        return std::unexpected(details::scan_error{"Invalid format"});
+    }
+
+    if constexpr (std::is_unsigned_v<T>) {
+        if (fmt[1] != 'u')
+            return std::unexpected(details::scan_error{"Expected %u format and non-empty input"});
+    } else {
+        if (fmt[1] != 'd')
+            return std::unexpected(details::scan_error{"Expected %d format and non-empty input"});
+    }
+
+    auto res = std::from_chars(input.data(), input.data() + input.size(), value);
+    if (res.ec != std::errc{} || res.ptr != input.data() + input.size())
+        return std::unexpected(details::scan_error{"Integer parse failed or incomplete"});
+
+    return value;
+}
+
+template <>
+std::expected<float, details::scan_error> parse_value<float>(std::string_view input, std::string_view fmt,
+                                                             float &value) {
+    if (fmt[1] != 'f')
+        return std::unexpected(details::scan_error{"Expected %f for float"});
+    auto res = std::from_chars(input.data(), input.data() + input.size(), value);
+    if (res.ec != std::errc{})
+        return std::unexpected(details::scan_error{"Float parse failed or input not fully consumed"});
+    return value;
+}
+
+template <>
+std::expected<double, details::scan_error> parse_value<double>(std::string_view input, std::string_view fmt,
+                                                               double &value) {
+    if (fmt[1] != 'f')
+        return std::unexpected(details::scan_error{"Expected %f for double"});
+    auto res = std::from_chars(input.data(), input.data() + input.size(), value);
+    if (res.ec != std::errc{})
+        return std::unexpected(details::scan_error{"Double parse failed or input not fully consumed"});
+    return value;
+}
+
+template <>
+std::expected<std::string_view, details::scan_error>
+parse_value<std::string_view>(std::string_view input, std::string_view fmt, std::string_view &value) {
+    if (fmt[1] != 's')
+        return std::unexpected(details::scan_error{"Expected %s format for string_view"});
+    value = input;
+    return value;
+}
+
+template <>
+std::expected<std::string, details::scan_error> parse_value<std::string>(std::string_view input, std::string_view fmt,
+                                                                         std::string &value) {
+    if (fmt[1] != 's')
+        return std::unexpected(details::scan_error{"Expected %s format for string"});
+    value = std::string(input);
+    return value;
+}
 
 // Функция для парсинга значения с учетом спецификатора формата
 template <typename T>
 std::expected<T, scan_error> parse_value_with_format(std::string_view input, std::string_view fmt) {
-    // здесь ваш код
+    if (fmt.empty() || fmt.size() < 4) {
+        return std::unexpected(details::scan_error{"Wrong format specifier"});
+    }
+    std::string_view inner = fmt.substr(1, fmt.size() - 2);
+    T value;
+    auto result = parse_value(input, inner, value);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+
+    return value;
 }
 
 // Функция для проверки корректности входных данных и выделения из обеих строк интересующих данных для парсинга
@@ -70,4 +156,31 @@ parse_sources(std::string_view input, std::string_view format) {
     return std::pair{format_parts, input_parts};
 }
 
-} // namespace stdx::details
+template <typename T, typename... Ts>
+std::expected<std::tuple<T, Ts...>, scan_error> parse_input(format_string<> input, details::fixed_string<> values,
+                                                            size_t index = 0) {
+    // static_assert(index < sizeof...(Ts) + 1, "Index out of range in parse_input");
+
+    const auto placeholder = input.placeholder_positions[index].second;
+    const auto fmt = values[index];
+
+    auto res = parse_value_with_format<T>(fmt, placeholder);
+
+    if (!res) {
+        return std::unexpected(res.error());
+    }
+
+    T value = *res;
+
+    if constexpr (sizeof...(Ts) == 0) {
+        return std::make_tuple(value);
+    } else {
+        auto tail = parse_input<Ts...>(input, values, index + 1);
+        if (!tail) {
+            return std::unexpected(tail.error());
+        }
+        return std::tuple_cat(std::make_tuple(value), *tail);
+    }
+}
+
+}  // namespace stdx::details
