@@ -13,6 +13,8 @@ namespace stdx {
 template <size_t N = 1024>
 class format_string : public details::fixed_string<N> {
 public:
+    using placeholder_pos = std::deque<std::pair<size_t, std::string_view>>;
+
     static constexpr std::string_view placeholders[] = {"{%d}", "{%f}", "{%s}", "{%u}"};
 
     format_string(std::string_view str) : details::fixed_string<N>(str.data(), str.size()) {
@@ -49,7 +51,7 @@ public:
         return count;
     }
 
-    std::expected<std::deque<std::pair<size_t, std::string_view>>, details::scan_error>
+    std::expected<placeholder_pos, details::scan_error>
     get_placeholder_positions(std::string_view str) {
         if (str.empty()) {
             return std::unexpected(details::scan_error{"Empty format string"});
@@ -71,7 +73,7 @@ public:
         return results;
     }
     size_t number_placeholders;
-    std::deque<std::pair<size_t, std::string_view>> placeholder_positions;
+    placeholder_pos placeholder_positions;
 };
 
 }  // namespace stdx
